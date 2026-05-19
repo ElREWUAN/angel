@@ -966,6 +966,7 @@ function renderizarHistorialCotizaciones() {
     cotizacionesAMostrar.forEach(cot => {
         let anticipo = cot.anticipo || 0;
         let saldo = cot.total - anticipo;
+        if (saldo < 0) saldo = 0;
         let estadoReal = saldo <= 0 ? "Completado" : "Pendiente";
         let colorEstado = saldo <= 0 ? "color: #4A5D54; font-weight:bold;" : "color: #D4A373; font-weight:bold;";
         
@@ -995,11 +996,11 @@ function renderizarHistorialCotizaciones() {
                     ${estadoReal}
                 </td>
                 <td>
-                    <button class="btn-icon" id="btn-edit-cot-${cot.id}" onclick="habilitarEdicionCotizacion(${cot.id})" title="Editar">✏️</button>
-                    <button class="btn-icon" onclick="imprimirReciboHistorial(${cot.id})" title="Imprimir Recibo de Abono">🖨️</button>
-                    <button class="btn-icon" id="btn-save-cot-${cot.id}" onclick="guardarEdicionCotizacion(${cot.id})" title="Guardar" style="display:none;">💾</button>
-                    <button class="btn-icon" id="btn-cancel-cot-${cot.id}" onclick="cancelarEdicionCotizacion(${cot.id})" title="Cancelar" style="display:none; color: #DC2626;">✖️</button>
-                    <button class="btn-icon" onclick="eliminarCotizacion(${cot.id})" title="Eliminar">🗑️</button>
+                    <button type="button" class="btn-icon" id="btn-edit-cot-${cot.id}" onclick="habilitarEdicionCotizacion(${cot.id})" title="Editar">✏️</button>
+                    <button type="button" class="btn-icon" onclick="imprimirReciboHistorial(${cot.id})" title="Imprimir Recibo de Abono">🖨️</button>
+                    <button type="button" class="btn-icon" id="btn-save-cot-${cot.id}" onclick="guardarEdicionCotizacion(${cot.id})" title="Guardar" style="display:none;">💾</button>
+                    <button type="button" class="btn-icon" id="btn-cancel-cot-${cot.id}" onclick="cancelarEdicionCotizacion(${cot.id})" title="Cancelar" style="display:none; color: #DC2626;">✖️</button>
+                    <button type="button" class="btn-icon" onclick="eliminarCotizacion(${cot.id})" title="Eliminar">🗑️</button>
                 </td>
             </tr>
         `;
@@ -1043,7 +1044,13 @@ async function guardarEdicionCotizacion(id) {
     const cotizacionActual = cotizacionesDB.find(c => c.id === id);
     
     // ✨ MAGIA: Sumar el nuevo pago al abono que ya tenía registrado
-    const nuevoAnticipoTotal = (cotizacionActual.anticipo || 0) + abonoIngresado;
+    let nuevoAnticipoTotal = (cotizacionActual.anticipo || 0) + abonoIngresado;
+
+    // Evitar que el anticipo registrado supere al total (previene saldos negativos si ingresan de más)
+    if (nuevoAnticipoTotal > cotizacionActual.total) {
+        nuevoAnticipoTotal = cotizacionActual.total;
+    }
+
     const nuevoEstado = nuevoAnticipoTotal >= cotizacionActual.total ? "Completado" : "Pendiente";
 
     try {
@@ -1057,6 +1064,11 @@ async function guardarEdicionCotizacion(id) {
         if (error) throw error;
         
         cotizacionEnEdicion = null;
+
+            // Limpiar el buscador para que se vuelvan a mostrar TODAS las cotizaciones
+            const buscador = document.getElementById('buscador-cotizaciones');
+            if (buscador) buscador.value = '';
+
         mostrarAlerta("✅", "Actualizado", "Abonos y estados actualizados exitosamente.");
         await cargarDatosDesdeSupabase();
     } catch (error) {
@@ -1072,6 +1084,7 @@ function imprimirReciboHistorial(id) {
     
     let anticipo = cot.anticipo || 0;
     let saldo = cot.total - anticipo;
+    if (saldo < 0) saldo = 0;
 
     document.getElementById('resumen-cliente').innerText = cot.cliente;
     document.getElementById('resumen-fecha').innerText = cot.fecha || 'Sin definir';

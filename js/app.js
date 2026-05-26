@@ -182,6 +182,11 @@ function elegirPaqueteDesdeGrid(idPaquete, nombrePaquete) {
         displaySeleccion.style.display = 'block';
     }
 
+    // ✨ ACTUALIZAR DISPONIBILIDAD DE EXTRAS
+    const inputCliente = document.getElementById('ev-cliente');
+    const clienteOriginal = inputCliente ? inputCliente.getAttribute('data-original') : null;
+    actualizarDisponibilidadExtrasCalendario(clienteOriginal);
+
     // 3. Cerramos el catálogo
     cerrarCatalogoVisual();
 }
@@ -198,6 +203,122 @@ function cerrarCatalogoVisual() {
 let fechaActual = new Date(2026, 3); // Abril 2026
 let fechaSeleccionada = "";
 
+// ✨ LÓGICA COMPARTIDA PARA VALIDAR STOCK POR FECHA
+function calcularStockDisponibleEnFecha(fechaStr, idProducto, idCotizacionIgnorar = null, clienteEventoIgnorar = null) {
+    let prod = productosDB.find(p => p.id == idProducto);
+    if (!prod) return 0;
+    
+    if (!fechaStr || fechaStr === "Pendiente") return prod.stock;
+
+    let stockReservado = 0;
+    
+    eventosDB.forEach(ev => {
+        if (ev.fecha === fechaStr && ev.cliente !== clienteEventoIgnorar) {
+            if (ev.extras && ev.extras[idProducto]) {
+                stockReservado += parseInt(ev.extras[idProducto]);
+            }
+            if (ev.paqueteId) {
+                let paq = paquetesDB.find(p => p.id == ev.paqueteId);
+                if (paq && paq.productos_incluidos && paq.productos_incluidos[idProducto]) {
+                    stockReservado += parseInt(paq.productos_incluidos[idProducto]);
+                }
+            }
+        }
+    });
+
+    cotizacionesDB.forEach(cot => {
+        if (cot.fecha === fechaStr && cot.id != idCotizacionIgnorar) {
+            let hasEvent = eventosDB.some(e => e.fecha === fechaStr && e.cliente === cot.cliente);
+            if (!hasEvent) {
+                if (cot.extras && cot.extras[idProducto]) {
+                    stockReservado += parseInt(cot.extras[idProducto]);
+                }
+                if (cot.paquete_id) {
+                    let paq = paquetesDB.find(p => p.id == cot.paquete_id);
+                    if (paq && paq.productos_incluidos && paq.productos_incluidos[idProducto]) {
+                        stockReservado += parseInt(paq.productos_incluidos[idProducto]);
+                    }
+                }
+            }
+        }
+    });
+
+    let disponible = prod.stock - stockReservado;
+    return disponible < 0 ? 0 : disponible;
+}
+
+function actualizarDisponibilidadExtrasCalendario(clienteOriginal = null) {
+    if (!fechaSeleccionada) return;
+    let idPaqueteElegido = document.getElementById('ev-paquete') ? document.getElementById('ev-paquete').value : null;
+    const displaySeleccion = document.getElementById('display-paquete-elegido');
+    if (displaySeleccion && displaySeleccion.hasAttribute('data-paquete-id')) {
+        idPaqueteElegido = displaySeleccion.getAttribute('data-paquete-id');
+    }
+    
+    let paqElegido = paquetesDB.find(p => p.id == idPaqueteElegido);
+
+    productosDB.forEach(prod => {
+        let disponible = calcularStockDisponibleEnFecha(fechaSeleccionada, prod.id, null, clienteOriginal);
+        if (paqElegido && paqElegido.productos_incluidos && paqElegido.productos_incluidos[prod.id]) {
+            disponible -= parseInt(paqElegido.productos_incluidos[prod.id]);
+        }
+        if (disponible < 0) disponible = 0;
+
+        let badge = document.getElementById(`ev-badge-disp-${prod.id}`);
+        let input = document.getElementById(`ev-extra-${prod.id}`);
+
+        if (badge) {
+            badge.innerText = `Disp: ${disponible}`;
+            badge.style.color = disponible === 0 ? '#DC2626' : '';
+        }
+        if (input) {
+            input.max = disponible;
+            if (parseInt(input.value) > disponible) input.value = disponible;
+        }
+    });
+}
+
+function actualizarDisponibilidadExtrasCotizacion() {
+    let fechaStr = document.getElementById('cot-fecha') ? document.getElementById('cot-fecha').value : null;
+    if (!fechaStr) return; 
+    
+    let idCotizacionIgnorar = document.getElementById('cot-id') ? document.getElementById('cot-id').value : null;
+    let idPaqueteElegido = document.getElementById('cot-paquete') ? document.getElementById('cot-paquete').value : null;
+    let paqElegido = paquetesDB.find(p => p.id == idPaqueteElegido);
+
+    productosDB.forEach(prod => {
+        let disponible = prod.stock;
+        if (fechaStr && fechaStr !== "Pendiente") {
+            disponible = calcularStockDisponibleEnFecha(fechaStr, prod.id, idCotizacionIgnorar, null);
+        }
+        if (paqElegido && paqElegido.productos_incluidos && paqElegido.productos_incluidos[prod.id]) {
+            disponible -= parseInt(paqElegido.productos_incluidos[prod.id]);
+        }
+        if (disponible < 0) disponible = 0;
+
+        let labelDisp = document.getElementById(`cot-badge-disp-${prod.id}`);
+        let input = document.getElementById(`cot-extra-${prod.id}`);
+        
+        if (labelDisp) {
+            labelDisp.innerText = `(Disp: ${disponible})`;
+            labelDisp.style.color = disponible === 0 ? '#DC2626' : 'var(--texto-claro)';
+        }
+        if (input) {
+            input.max = disponible;
+            if (parseInt(input.value) > disponible) input.value = disponible;
+        }
+    });
+}
+
+function validarMaximoInput(input) {
+    let max = parseInt(input.max);
+    let val = parseInt(input.value);
+    if (val > max) {
+        input.value = max;
+        mostrarAlerta("⚠️", "Stock Insuficiente", `Solo hay ${max} unidades disponibles de este artículo para la fecha seleccionada.`);
+    }
+}
+
 function cargarDatosDashboard() {
     const contenedor = document.getElementById('ev-extras-container');
     if (!contenedor) return;
@@ -206,7 +327,7 @@ function cargarDatosDashboard() {
         contenedor.innerHTML += `
             <div class="extra-card">
                 <div class="extra-info">
-                    <h4>${prod.nombre}</h4><span class="badge-stock-mini">Disp: ${prod.stock}</span>
+                    <h4>${prod.nombre}</h4><span class="badge-stock-mini" id="ev-badge-disp-${prod.id}">Disp: ${prod.stock}</span>
                 </div>
                 <div class="extra-controls">
                     <button type="button" class="btn-qty" onclick="cambiarCantidadExtra(${prod.id}, -1)">-</button>
@@ -223,7 +344,11 @@ function cambiarCantidadExtra(id, cambio) {
     let actual = parseInt(input.value) || 0;
     let maximo = parseInt(input.max) || 0;
     let nueva = actual + cambio;
-    if(nueva >= 0 && nueva <= maximo) input.value = nueva;
+    if (nueva > maximo) {
+        mostrarAlerta("⚠️", "Stock Agotado", `No hay más disponibilidad en inventario para esta fecha.`);
+        return;
+    }
+    if(nueva >= 0) input.value = nueva;
 }
 
 function renderizarCalendario() {
@@ -356,6 +481,10 @@ function clickEnFecha(fechaStr) {
     } else if (msgHorarios) {
         msgHorarios.style.display = 'none';
     }
+
+    const clienteOriginal = document.getElementById('ev-cliente') ? document.getElementById('ev-cliente').getAttribute('data-original') : null;
+    actualizarDisponibilidadExtrasCalendario(clienteOriginal);
+
     renderizarCalendario(); 
 }
 
@@ -373,6 +502,28 @@ async function guardarEvento() {
     } else if (document.getElementById('ev-paquete') && document.getElementById('ev-paquete').value) {
         paqueteVal = document.getElementById('ev-paquete').value;
     }
+
+    // ✨ NUEVO: VALIDACIÓN DE STOCK ANTES DE GUARDAR EL EVENTO
+    let stockError = false;
+    let paqElegido = paquetesDB.find(p => p.id == paqueteVal);
+    
+    productosDB.forEach(prod => {
+        let input = document.getElementById(`ev-extra-${prod.id}`);
+        let cantidadReq = input ? parseInt(input.value) : 0;
+        
+        if (paqElegido && paqElegido.productos_incluidos && paqElegido.productos_incluidos[prod.id]) {
+            cantidadReq += parseInt(paqElegido.productos_incluidos[prod.id]);
+        }
+        
+        if (cantidadReq > 0) {
+            let disponible = calcularStockDisponibleEnFecha(fechaSeleccionada, prod.id, null, clienteOriginal || inputCliente.value);
+            if (cantidadReq > disponible) {
+                stockError = true;
+                mostrarAlerta("❌", "Stock Insuficiente", `El inventario de ${prod.nombre} es insuficiente para esta fecha. (Faltan ${cantidadReq - disponible})`);
+            }
+        }
+    });
+    if (stockError) return;
 
     let eventoFinal = { 
         fecha: fechaSeleccionada, 
@@ -430,6 +581,8 @@ function cargarEventoParaEditar(cliente) {
             document.getElementById('display-paquete-elegido').style.display = 'block';
         }
 
+        actualizarDisponibilidadExtrasCalendario(cliente);
+
         document.getElementById('ev-hora-inicio').value = ev.horaInicio;
         document.getElementById('ev-hora-fin').value = ev.horaFin;
 
@@ -483,6 +636,8 @@ function limpiarFormularioEvento() {
     });
     document.getElementById('btn-guardar-evento').style.display = 'block';
     document.getElementById('grupo-editar-evento').style.display = 'none';
+    
+    actualizarDisponibilidadExtrasCalendario(null);
 }
 
 // ==========================================
@@ -805,11 +960,33 @@ function cargarDatosCotizacion() {
     productosDB.forEach(prod => {
         contenedorExtras.innerHTML += `
             <div class="extra-item" style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
-                <span style="font-size:0.9rem; font-weight:600;">${prod.nombre} <br><small style="color:var(--texto-claro)">$${prod.precio} c/u</small></span>
-                <input type="number" id="cot-extra-${prod.id}" min="0" value="0" oninput="actualizarRecibo()" style="width:70px;">
+                <span style="font-size:0.9rem; font-weight:600;">${prod.nombre} <span id="cot-badge-disp-${prod.id}" style="color:var(--texto-claro); font-weight:400; font-size:0.8rem;">(Disp: ${prod.stock})</span><br><small style="color:var(--texto-claro)">$${parseFloat(prod.precio).toFixed(2)} c/u</small></span>
+                <input type="number" id="cot-extra-${prod.id}" min="0" max="${prod.stock}" value="0" oninput="validarMaximoInput(this); actualizarRecibo();" style="width:70px; border-radius: 6px; padding: 6px; border: 1px solid var(--borde);">
             </div>
         `;
     });
+
+    // ✨ NUEVO: Verificar si venimos desde el calendario para autollenar la cotización
+    const cotPendienteStr = localStorage.getItem('cotizacionPendienteDesdeEvento');
+    if (cotPendienteStr) {
+        const ev = JSON.parse(cotPendienteStr);
+        document.getElementById('cot-cliente').value = ev.cliente || '';
+        document.getElementById('cot-fecha').value = ev.fecha || '';
+        
+        if (ev.paqueteId) {
+            document.getElementById('cot-paquete').value = ev.paqueteId;
+        }
+        
+        if (ev.extras) {
+            for (const [prodId, qty] of Object.entries(ev.extras)) {
+                let input = document.getElementById(`cot-extra-${prodId}`);
+                if (input) input.value = qty;
+            }
+        }
+        
+        localStorage.removeItem('cotizacionPendienteDesdeEvento'); // Lo borramos para que no se auto-llene siempre
+        setTimeout(actualizarRecibo, 50); // Actualizamos los montos visuales al instante
+    }
 }
 
 function actualizarRecibo() {
@@ -817,6 +994,8 @@ function actualizarRecibo() {
     const fechaInput = document.getElementById('cot-fecha').value;
     const anticipo = parseFloat(document.getElementById('cot-anticipo').value) || 0;
     
+    actualizarDisponibilidadExtrasCotizacion();
+
     document.getElementById('resumen-cliente').innerText = nombreCliente;
     document.getElementById('resumen-fecha').innerText = fechaInput ? fechaInput : 'Sin definir';
 
@@ -872,29 +1051,65 @@ async function guardarCotizacion() {
     // El estado ahora es 100% automático en base a si abonó el total o no
     let estadoCot = parseFloat(saldoTexto) <= 0 ? "Completado" : "Pendiente";
 
+    // ✨ NUEVO: VALIDACIÓN DE STOCK ANTES DE GUARDAR COTIZACIÓN
+    if (fecha && fecha !== "Pendiente") {
+        let stockError = false;
+        let idPaquete = document.getElementById('cot-paquete').value;
+        let paqElegido = paquetesDB.find(p => p.id == idPaquete);
+        
+        productosDB.forEach(prod => {
+            let input = document.getElementById(`cot-extra-${prod.id}`);
+            let cantidadReq = input ? parseInt(input.value) : 0;
+            
+            if (paqElegido && paqElegido.productos_incluidos && paqElegido.productos_incluidos[prod.id]) {
+                cantidadReq += parseInt(paqElegido.productos_incluidos[prod.id]);
+            }
+            
+            if (cantidadReq > 0) {
+                let disponible = calcularStockDisponibleEnFecha(fecha, prod.id, cotId, null);
+                if (cantidadReq > disponible) {
+                    stockError = true;
+                    mostrarAlerta("❌", "Stock Insuficiente", `El inventario de ${prod.nombre} es insuficiente para esta fecha. (Faltan ${cantidadReq - disponible})`);
+                }
+            }
+        });
+        if (stockError) return;
+    }
+
+    // ✨ NUEVO: Guardaremos el paquete y los extras directamente en la tabla Cotizaciones
+    const idPaquete = document.getElementById('cot-paquete').value;
+    let extrasCot = {};
+    productosDB.forEach(prod => {
+        let input = document.getElementById(`cot-extra-${prod.id}`);
+        if(input && parseInt(input.value) > 0) extrasCot[prod.id] = parseInt(input.value);
+    });
+
+    let payloadCotizacion = {
+        cliente: cliente,
+        fecha: fecha,
+        total: total,
+        anticipo: anticipo,
+        estado: estadoCot,
+        paquete_id: idPaquete ? parseInt(idPaquete) : null,
+        extras: extrasCot
+    };
+
     try {
         if (cotId) {
             // == MODO EDICIÓN ==
             const cotOriginal = cotizacionesDB.find(c => c.id == cotId);
 
-            const { error } = await supabaseClient.from('Cotizaciones').update({
-                cliente: cliente,
-                fecha: fecha,
-                total: total,
-                anticipo: anticipo,
-                estado: estadoCot
-            }).eq('id', cotId);
-            if (error) throw error;
+            let response = await supabaseClient.from('Cotizaciones').update(payloadCotizacion).eq('id', cotId);
+            
+            // Fallback por si la base de datos no tiene las columnas creadas aún
+            if (response.error && response.error.message.includes("column")) {
+                delete payloadCotizacion.paquete_id;
+                delete payloadCotizacion.extras;
+                response = await supabaseClient.from('Cotizaciones').update(payloadCotizacion).eq('id', cotId);
+            }
+            if (response.error) throw response.error;
 
             if (fecha && fecha !== "Pendiente") {
-                const idPaquete = document.getElementById('cot-paquete').value;
-                let extrasCot = {};
-                
-                productosDB.forEach(prod => {
-                    let input = document.getElementById(`cot-extra-${prod.id}`);
-                    if(input && parseInt(input.value) > 0) extrasCot[prod.id] = parseInt(input.value);
-                });
-
                 let eventoFinal = { 
                     fecha: fecha, 
                     horaInicio: "12:00", 
@@ -918,24 +1133,17 @@ async function guardarCotizacion() {
             mostrarAlerta("✅", "Actualizada", "La cotización y el evento fueron actualizados.");
         } else {
             // == MODO CREACIÓN NUEVA ==
-            const { error } = await supabaseClient.from('Cotizaciones').insert([{
-                cliente: cliente,
-                fecha: fecha,
-                total: total,
-                anticipo: anticipo,
-                estado: estadoCot
-            }]);
-            if (error) throw error;
+            let response = await supabaseClient.from('Cotizaciones').insert([payloadCotizacion]);
+
+            // Fallback por si la base de datos no tiene las columnas creadas aún
+            if (response.error && response.error.message.includes("column")) {
+                delete payloadCotizacion.paquete_id;
+                delete payloadCotizacion.extras;
+                response = await supabaseClient.from('Cotizaciones').insert([payloadCotizacion]);
+            }
+            if (response.error) throw response.error;
             
             if (fecha && fecha !== "Pendiente") {
-                const idPaquete = document.getElementById('cot-paquete').value;
-                let extrasCot = {};
-                
-                productosDB.forEach(prod => {
-                    let input = document.getElementById(`cot-extra-${prod.id}`);
-                    if(input && parseInt(input.value) > 0) extrasCot[prod.id] = parseInt(input.value);
-                });
-
                 let eventoFinal = { 
                     fecha: fecha, 
                     horaInicio: "12:00", 
@@ -1170,13 +1378,22 @@ function editarCotizacionForm(id) {
         if(input) input.value = 0;
     });
 
-    // Busca si tiene artículos extra guardados en la base de eventos vinculada
+    // ✨ PASO 1: Intentar cargar desde la cotización directamente (si ya existen las columnas)
+    if (cotizacion.paquete_id) document.getElementById('cot-paquete').value = cotizacion.paquete_id;
+    if (cotizacion.extras) {
+        for (const [prodId, cantidad] of Object.entries(cotizacion.extras)) {
+            let input = document.getElementById(`cot-extra-${prodId}`);
+            if (input) input.value = cantidad;
+        }
+    }
+
+    // ✨ PASO 2: Fallback (compatibilidad) buscar artículos guardados en la base de eventos vinculada
     const eventoAsociado = eventosDB.find(e => e.cliente === cotizacion.cliente && e.fecha === cotizacion.fecha);
     if (eventoAsociado) {
-        if (eventoAsociado.paqueteId) {
+        if (!cotizacion.paquete_id && eventoAsociado.paqueteId) {
             document.getElementById('cot-paquete').value = eventoAsociado.paqueteId;
         }
-        if (eventoAsociado.extras) {
+        if (!cotizacion.extras && eventoAsociado.extras) {
             for (const [prodId, cantidad] of Object.entries(eventoAsociado.extras)) {
                 let input = document.getElementById(`cot-extra-${prodId}`);
                 if (input) input.value = cantidad;

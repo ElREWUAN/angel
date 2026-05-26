@@ -859,6 +859,7 @@ function actualizarRecibo() {
 }
 
 async function guardarCotizacion() {
+    const cotId = document.getElementById('cot-id').value;
     const cliente = document.getElementById('cot-cliente').value;
     const totalTexto = document.getElementById('resumen-total').innerText.replace('$', '');
     const total = parseFloat(totalTexto);
@@ -872,50 +873,84 @@ async function guardarCotizacion() {
     let estadoCot = parseFloat(saldoTexto) <= 0 ? "Completado" : "Pendiente";
 
     try {
-        const { error } = await supabaseClient.from('Cotizaciones').insert([{
-            cliente: cliente,
-            fecha: fecha,
-            total: total,
-            anticipo: anticipo,
-            estado: estadoCot
-        }]);
-        if (error) throw error;
-        
-        // ✨ NUEVO: AGREGAR AL CALENDARIO AUTOMÁTICAMENTE
-        if (fecha && fecha !== "Pendiente") {
-            const idPaquete = document.getElementById('cot-paquete').value;
-            let extrasCot = {};
-            
-            productosDB.forEach(prod => {
-                let input = document.getElementById(`cot-extra-${prod.id}`);
-                if(input && parseInt(input.value) > 0) extrasCot[prod.id] = parseInt(input.value);
-            });
+        if (cotId) {
+            // == MODO EDICIÓN ==
+            const cotOriginal = cotizacionesDB.find(c => c.id == cotId);
 
-            let eventoFinal = { 
-                fecha: fecha, 
-                horaInicio: "12:00", 
-                horaFin: "18:00", 
-                cliente: cliente, 
-                paqueteId: idPaquete ? parseInt(idPaquete) : null, 
-                extras: extrasCot 
-            };
+            const { error } = await supabaseClient.from('Cotizaciones').update({
+                cliente: cliente,
+                fecha: fecha,
+                total: total,
+                anticipo: anticipo,
+                estado: estadoCot
+            }).eq('id', cotId);
+            if (error) throw error;
+
+            if (fecha && fecha !== "Pendiente") {
+                const idPaquete = document.getElementById('cot-paquete').value;
+                let extrasCot = {};
+                
+                productosDB.forEach(prod => {
+                    let input = document.getElementById(`cot-extra-${prod.id}`);
+                    if(input && parseInt(input.value) > 0) extrasCot[prod.id] = parseInt(input.value);
+                });
+
+                let eventoFinal = { 
+                    fecha: fecha, 
+                    horaInicio: "12:00", 
+                    horaFin: "18:00", 
+                    cliente: cliente, 
+                    paqueteId: idPaquete ? parseInt(idPaquete) : null, 
+                    extras: extrasCot 
+                };
+                
+                if (cotOriginal && cotOriginal.fecha !== "Pendiente") {
+                    const eventoExistente = eventosDB.find(e => e.cliente === cotOriginal.cliente && e.fecha === cotOriginal.fecha);
+                    if (eventoExistente) {
+                        supabaseClient.from('Eventos').update(eventoFinal).eq('fecha', cotOriginal.fecha).eq('cliente', cotOriginal.cliente).then(() => console.log('✅ Evento actualizado automáticamente.'));
+                    } else {
+                        supabaseClient.from('Eventos').insert([eventoFinal]).then(() => console.log('✅ Evento nuevo insertado (antes no existía).'));
+                    }
+                } else {
+                    supabaseClient.from('Eventos').insert([eventoFinal]).then(() => console.log('✅ Evento agendado automáticamente.'));
+                }
+            }
+            mostrarAlerta("✅", "Actualizada", "La cotización y el evento fueron actualizados.");
+        } else {
+            // == MODO CREACIÓN NUEVA ==
+            const { error } = await supabaseClient.from('Cotizaciones').insert([{
+                cliente: cliente,
+                fecha: fecha,
+                total: total,
+                anticipo: anticipo,
+                estado: estadoCot
+            }]);
+            if (error) throw error;
             
-            // Lo enviamos a la BD sin detener el flujo principal
-            supabaseClient.from('Eventos').insert([eventoFinal]).then(() => console.log('✅ Agendado en calendario automáticamente.'));
+            if (fecha && fecha !== "Pendiente") {
+                const idPaquete = document.getElementById('cot-paquete').value;
+                let extrasCot = {};
+                
+                productosDB.forEach(prod => {
+                    let input = document.getElementById(`cot-extra-${prod.id}`);
+                    if(input && parseInt(input.value) > 0) extrasCot[prod.id] = parseInt(input.value);
+                });
+
+                let eventoFinal = { 
+                    fecha: fecha, 
+                    horaInicio: "12:00", 
+                    horaFin: "18:00", 
+                    cliente: cliente, 
+                    paqueteId: idPaquete ? parseInt(idPaquete) : null, 
+                    extras: extrasCot 
+                };
+                
+                supabaseClient.from('Eventos').insert([eventoFinal]).then(() => console.log('✅ Agendado en calendario automáticamente.'));
+            }
+            mostrarAlerta("✅", "Guardada", "La cotización fue registrada y agendada en el calendario.");
         }
-
-        mostrarAlerta("✅", "Guardada", "La cotización fue registrada y agendada en el calendario.");
         
-        document.getElementById('cot-cliente').value = '';
-        document.getElementById('cot-fecha').value = '';
-        document.getElementById('cot-anticipo').value = 0;
-        document.getElementById('cot-paquete').value = '';
-        productosDB.forEach(prod => {
-            let input = document.getElementById(`cot-extra-${prod.id}`);
-            if(input) input.value = 0;
-        });
-        
-        actualizarRecibo();
+        if (typeof cancelarEdicionCot === 'function') cancelarEdicionCot(); // Limpia los campos
         await cargarDatosDesdeSupabase();
     } catch (error) {
         console.error(error);
@@ -996,7 +1031,8 @@ function renderizarHistorialCotizaciones() {
                     ${estadoReal}
                 </td>
                 <td>
-                    <button type="button" class="btn-icon" id="btn-edit-cot-${cot.id}" onclick="habilitarEdicionCotizacion(${cot.id})" title="Editar">✏️</button>
+                    <button type="button" class="btn-icon" onclick="editarCotizacionForm(${cot.id})" title="Editar Cotización Completa">✏️</button>
+                    <button type="button" class="btn-icon" id="btn-edit-cot-${cot.id}" onclick="habilitarEdicionCotizacion(${cot.id})" title="Abonar Pago Rápido">💰</button>
                     <button type="button" class="btn-icon" onclick="imprimirReciboHistorial(${cot.id})" title="Imprimir Recibo de Abono">🖨️</button>
                     <button type="button" class="btn-icon" id="btn-save-cot-${cot.id}" onclick="guardarEdicionCotizacion(${cot.id})" title="Guardar" style="display:none;">💾</button>
                     <button type="button" class="btn-icon" id="btn-cancel-cot-${cot.id}" onclick="cancelarEdicionCotizacion(${cot.id})" title="Cancelar" style="display:none; color: #DC2626;">✖️</button>
@@ -1114,6 +1150,67 @@ async function eliminarCotizacion(id) {
             mostrarAlerta("❌", "Error", "No se eliminó la cotización.");
         }
     }
+}
+
+// ==========================================
+// ✨ LÓGICA PARA EDITAR COTIZACIONES EN EL FORMULARIO
+// ==========================================
+function editarCotizacionForm(id) {
+    const cotizacion = cotizacionesDB.find(c => c.id === id);
+    if (!cotizacion) return;
+
+    document.getElementById('cot-id').value = cotizacion.id;
+    document.getElementById('cot-cliente').value = cotizacion.cliente;
+    document.getElementById('cot-fecha').value = cotizacion.fecha !== "Pendiente" ? cotizacion.fecha : "";
+    document.getElementById('cot-anticipo').value = cotizacion.anticipo || 0;
+
+    document.getElementById('cot-paquete').value = "";
+    productosDB.forEach(prod => {
+        let input = document.getElementById(`cot-extra-${prod.id}`);
+        if(input) input.value = 0;
+    });
+
+    // Busca si tiene artículos extra guardados en la base de eventos vinculada
+    const eventoAsociado = eventosDB.find(e => e.cliente === cotizacion.cliente && e.fecha === cotizacion.fecha);
+    if (eventoAsociado) {
+        if (eventoAsociado.paqueteId) {
+            document.getElementById('cot-paquete').value = eventoAsociado.paqueteId;
+        }
+        if (eventoAsociado.extras) {
+            for (const [prodId, cantidad] of Object.entries(eventoAsociado.extras)) {
+                let input = document.getElementById(`cot-extra-${prodId}`);
+                if (input) input.value = cantidad;
+            }
+        }
+    }
+
+    const btnGuardar = document.getElementById('btn-guardar-cot');
+    const btnCancelar = document.getElementById('btn-cancelar-cot');
+    if(btnGuardar) btnGuardar.innerText = 'Actualizar Cotización';
+    if(btnCancelar) btnCancelar.style.display = 'block';
+
+    actualizarRecibo();
+    window.scrollTo({ top: 0, behavior: 'smooth' }); // Te sube al inicio de la página donde está el formulario
+}
+
+function cancelarEdicionCot() {
+    document.getElementById('cot-id').value = '';
+    document.getElementById('cot-cliente').value = '';
+    document.getElementById('cot-fecha').value = '';
+    document.getElementById('cot-anticipo').value = '0';
+    document.getElementById('cot-paquete').value = '';
+    
+    productosDB.forEach(prod => {
+        let input = document.getElementById(`cot-extra-${prod.id}`);
+        if(input) input.value = 0;
+    });
+
+    const btnGuardar = document.getElementById('btn-guardar-cot');
+    const btnCancelar = document.getElementById('btn-cancelar-cot');
+    if(btnGuardar) btnGuardar.innerText = 'Guardar Cotización';
+    if(btnCancelar) btnCancelar.style.display = 'none';
+
+    actualizarRecibo();
 }
 
 // ==========================================

@@ -88,9 +88,9 @@
 
     <div class="sidebar">
         <h2>ANGELLE´S</h2>
-        <a href="menu.html" class="menu-item">📊 Dashboard</a>
-        <a href="inventario.html" class="menu-item">📦 Inventario</a>
-        <a href="cotizaciones.html" class="menu-item activo">💰 Cotizaciones</a>
+        <a href="menu.html" class="menu-item">Menu</a>
+        <a href="inventario.html" class="menu-item">Inventario</a>
+        <a href="cotizaciones.html" class="menu-item activo">Cotizaciones</a>
         
         <button onclick="cerrarSesion()" class="btn-logout-elegante">
             <span>🚪</span> Cerrar Sesión
@@ -104,6 +104,7 @@
             
             <div class="card">
                 <h3>📝 Datos de la Cotización</h3>
+                <input type="hidden" id="cot-id">
                 
                 <div class="form-group">
                     <label>Nombre del Cliente</label>
@@ -161,7 +162,10 @@
                     <span id="resumen-saldo">$0.00</span>
                 </div>
 
-                <button class="btn-crear" onclick="guardarCotizacion()">Guardar Cotización</button>
+                <div style="display: flex; gap: 10px; width: 100%;">
+                    <button class="btn-crear" id="btn-guardar-cot" onclick="guardarCotizacion()" style="flex: 1;">Guardar Cotización</button>
+                    <button class="btn-secundario" id="btn-cancelar-cot" onclick="cancelarEdicionCot()" style="display: none; flex: 1; border-color: #e74c3c; color: #e74c3c;">Cancelar Edición</button>
+                </div>
                 <button class="btn-secundario" onclick="window.print()">🖨️ Imprimir PDF</button>
             </div>
         </div>

@@ -88,9 +88,9 @@
 
     <div class="sidebar">
         <h2>ANGELLE´S</h2>
-        <a href="menu.html" class="menu-item">📊 Dashboard</a>
-        <a href="inventario.html" class="menu-item">📦 Inventario</a>
-        <a href="cotizaciones.html" class="menu-item activo">💰 Cotizaciones</a>
+        <a href="menu.html" class="menu-item">Menu</a>
+        <a href="inventario.html" class="menu-item">Inventario</a>
+        <a href="cotizaciones.html" class="menu-item activo">Cotizaciones</a>
         
         <button onclick="cerrarSesion()" class="btn-logout-elegante">
             <span>🚪</span> Cerrar Sesión
@@ -204,13 +204,9 @@
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="js/supabase.js"></script>
     <script src="js/app.js"></script>
-    <script src="supabase.js"></script>
-    <script src="app.js"></script>
     <script>
         window.onload = async function() {
             await cargarDatosDesdeSupabase();
-            if (typeof cargarDatosCotizacion === 'function') cargarDatosCotizacion();
-            if (typeof renderizarHistorialCotizaciones === 'function') renderizarHistorialCotizaciones();
         };
     </script>
 </body>

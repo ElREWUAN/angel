@@ -92,17 +92,19 @@ function aplicarPermisos() {
     const rol = localStorage.getItem('rolUsuario');
     if (!rol) return;
 
-    if (rol === 'empleado') {
+    // Normalizamos a minúsculas por si en la base de datos dice "Empleado" o "EMPLEADO"
+    if (rol.toLowerCase() === 'empleado') {
         // Ocultar la opción de inventario del sidebar en todas las pantallas
         const linksMenu = document.querySelectorAll('.menu-item');
         linksMenu.forEach(link => {
-            if (link.getAttribute('href') === 'inventario.html') {
+            const href = link.getAttribute('href');
+            if (href && href.toLowerCase().includes('inventario.html')) {
                 link.style.display = 'none';
             }
         });
 
         // Expulsar al empleado si intenta entrar a la fuerza usando la URL
-        if (window.location.href.includes('inventario.html')) {
+        if (window.location.href.toLowerCase().includes('inventario.html')) {
             window.location.href = "menu.html";
         }
     }
@@ -283,13 +285,14 @@ function actualizarDisponibilidadExtrasCotizacion() {
     if (!fechaStr) return; 
     
     let idCotizacionIgnorar = document.getElementById('cot-id') ? document.getElementById('cot-id').value : null;
+    let clienteIgnorar = document.getElementById('cot-cliente') ? document.getElementById('cot-cliente').value : null;
     let idPaqueteElegido = document.getElementById('cot-paquete') ? document.getElementById('cot-paquete').value : null;
     let paqElegido = paquetesDB.find(p => p.id == idPaqueteElegido);
 
     productosDB.forEach(prod => {
         let disponible = prod.stock;
         if (fechaStr && fechaStr !== "Pendiente") {
-            disponible = calcularStockDisponibleEnFecha(fechaStr, prod.id, idCotizacionIgnorar, null);
+            disponible = calcularStockDisponibleEnFecha(fechaStr, prod.id, idCotizacionIgnorar, clienteIgnorar);
         }
         if (paqElegido && paqElegido.productos_incluidos && paqElegido.productos_incluidos[prod.id]) {
             disponible -= parseInt(paqElegido.productos_incluidos[prod.id]);
@@ -471,8 +474,9 @@ function clickEnFecha(fechaStr) {
             <div style="display:flex; justify-content:space-between; align-items:center; margin-top:8px; border-bottom: 1px dashed #ccc; padding-bottom:8px;">
                 <span>• ${e.horaInicio} a ${e.horaFin} hrs. (${e.cliente})</span>
                 <div>
-                    <button type="button" onclick="cargarEventoParaEditar('${e.cliente}')" style="background:none; border:none; cursor:pointer;">✏️</button>
-                    <button type="button" onclick="eliminarEventoLista('${e.cliente}')" style="background:none; border:none; cursor:pointer;">🗑️</button>
+                    <button type="button" onclick="prepararCotizacionDesdeEvento('${e.cliente}', '${e.fecha}')" title="Generar Cotización de este Evento" style="background:none; border:none; cursor:pointer; font-size:1.1rem;">💰</button>
+                    <button type="button" onclick="cargarEventoParaEditar('${e.cliente}')" title="Editar Evento" style="background:none; border:none; cursor:pointer; font-size:1.1rem;">✏️</button>
+                    <button type="button" onclick="eliminarEventoLista('${e.cliente}')" title="Cancelar Evento" style="background:none; border:none; cursor:pointer; font-size:1.1rem;">🗑️</button>
                 </div>
             </div>`;
         });
@@ -486,6 +490,15 @@ function clickEnFecha(fechaStr) {
     actualizarDisponibilidadExtrasCalendario(clienteOriginal);
 
     renderizarCalendario(); 
+}
+
+// ✨ NUEVO: Enviar datos del evento seleccionado al panel de cotizaciones
+function prepararCotizacionDesdeEvento(cliente, fecha) {
+    const evento = eventosDB.find(e => e.cliente === cliente && e.fecha === fecha);
+    if (evento) {
+        localStorage.setItem('cotizacionPendienteDesdeEvento', JSON.stringify(evento));
+        window.location.href = "cotizaciones.html"; // Redirigimos al panel de cotizaciones
+    }
 }
 
 async function guardarEvento() {
@@ -973,12 +986,18 @@ function cargarDatosCotizacion() {
         document.getElementById('cot-cliente').value = ev.cliente || '';
         document.getElementById('cot-fecha').value = ev.fecha || '';
         
-        if (ev.paqueteId) {
-            document.getElementById('cot-paquete').value = ev.paqueteId;
+        let paqueteIdGuardado = ev.paqueteId || ev.paquete_id;
+        if (paqueteIdGuardado) {
+            document.getElementById('cot-paquete').value = paqueteIdGuardado;
         }
         
-        if (ev.extras) {
-            for (const [prodId, qty] of Object.entries(ev.extras)) {
+        let extrasGuardados = ev.extras;
+        if (typeof extrasGuardados === 'string') {
+            try { extrasGuardados = JSON.parse(extrasGuardados); } catch (e) {}
+        }
+        
+        if (extrasGuardados && typeof extrasGuardados === 'object') {
+            for (const [prodId, qty] of Object.entries(extrasGuardados)) {
                 let input = document.getElementById(`cot-extra-${prodId}`);
                 if (input) input.value = qty;
             }
@@ -1066,7 +1085,7 @@ async function guardarCotizacion() {
             }
             
             if (cantidadReq > 0) {
-                let disponible = calcularStockDisponibleEnFecha(fecha, prod.id, cotId, null);
+                let disponible = calcularStockDisponibleEnFecha(fecha, prod.id, cotId, cliente);
                 if (cantidadReq > disponible) {
                     stockError = true;
                     mostrarAlerta("❌", "Stock Insuficiente", `El inventario de ${prod.nombre} es insuficiente para esta fecha. (Faltan ${cantidadReq - disponible})`);

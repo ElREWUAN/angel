@@ -7,6 +7,25 @@ let eventosDB = [];
 let usuariosDB = [];
 let cotizacionesDB = [];
 
+let hayCambiosSinGuardar = false; // ✨ NUEVO: Rastreador global de cambios
+
+// ✨ NUEVO: Escuchar cambios en los inputs para activar la advertencia
+['input', 'change'].forEach(evt => {
+    document.addEventListener(evt, (e) => {
+        if (e.target.id && e.target.id.includes('buscador')) return; // Ignorar buscadores
+        if (e.target.closest('#loginForm')) return; // Ignorar login
+        
+        if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT' || e.target.tagName === 'TEXTAREA') {
+            hayCambiosSinGuardar = true;
+        }
+    });
+});
+
+// ✨ NUEVO: Evitar que cierren la pestaña o recarguen la página accidentalmente
+window.addEventListener('beforeunload', (e) => {
+    if (hayCambiosSinGuardar) { e.preventDefault(); e.returnValue = ''; }
+});
+
 // ✨ NUEVO: Función para descargar todo desde Supabase al iniciar
 async function cargarDatosDesdeSupabase() {
     try {
@@ -70,6 +89,12 @@ function cerrarAlerta() {
 
 // ✨ NUEVO: Cierre de sesión creativo y seguro
 function cerrarSesion() { 
+    if (hayCambiosSinGuardar) {
+        if (!confirm("⚠️ Tienes datos sin guardar.\n\nSi cierras sesión, se perderán. ¿Deseas salir de todos modos?")) {
+            return;
+        }
+    }
+    hayCambiosSinGuardar = false;
     mostrarAlerta("👋", "Hasta pronto", "Cerrando sesión de forma segura...");
     
     // Redirigimos al usuario rápidamente al login
@@ -189,6 +214,7 @@ function elegirPaqueteDesdeGrid(idPaquete, nombrePaquete) {
     const clienteOriginal = inputCliente ? inputCliente.getAttribute('data-original') : null;
     actualizarDisponibilidadExtrasCalendario(clienteOriginal);
 
+    hayCambiosSinGuardar = true; // ✨ Se modificó algo
     // 3. Cerramos el catálogo
     cerrarCatalogoVisual();
 }
@@ -351,7 +377,10 @@ function cambiarCantidadExtra(id, cambio) {
         mostrarAlerta("⚠️", "Stock Agotado", `No hay más disponibilidad en inventario para esta fecha.`);
         return;
     }
-    if(nueva >= 0) input.value = nueva;
+    if (nueva >= 0) {
+        input.value = nueva;
+        hayCambiosSinGuardar = true; // ✨ Hubo un cambio
+    }
 }
 
 function renderizarCalendario() {
@@ -568,6 +597,7 @@ async function guardarEvento() {
             mostrarAlerta("✨", "Agendado", "Nuevo evento guardado en la nube.");
         }
         
+        hayCambiosSinGuardar = false; // ✨ Se guardó con éxito
         // Volvemos a descargar los datos actualizados y refrescamos la pantalla
         await cargarDatosDesdeSupabase();
         clickEnFecha(fechaSeleccionada); 
@@ -606,6 +636,8 @@ function cargarEventoParaEditar(cliente) {
 
         document.getElementById('btn-guardar-evento').style.display = 'none';
         document.getElementById('grupo-editar-evento').style.display = 'flex';
+
+        hayCambiosSinGuardar = true; // ✨ Estamos en modo edición
     }
 }
 
@@ -651,6 +683,8 @@ function limpiarFormularioEvento() {
     document.getElementById('grupo-editar-evento').style.display = 'none';
     
     actualizarDisponibilidadExtrasCalendario(null);
+
+    hayCambiosSinGuardar = false; // ✨ Formulario limpio
 }
 
 // ==========================================
@@ -728,6 +762,7 @@ function editarProducto(id) {
     document.getElementById('inv-precio').value = producto.precio;
     document.getElementById('btn-guardar-prod').innerText = "Actualizar Artículo";
     document.getElementById('btn-cancelar-prod').style.display = "block";
+    hayCambiosSinGuardar = true; // ✨ En edición
 }
 
 async function eliminarProducto(id) {
@@ -752,6 +787,7 @@ function cancelarEdicionProd() {
     document.getElementById('inv-precio').value = "";
     document.getElementById('btn-guardar-prod').innerText = "Guardar Artículo";
     document.getElementById('btn-cancelar-prod').style.display = "none";
+    hayCambiosSinGuardar = false; // ✨ Formulario limpio
 }
 
 // ✨ NUEVO: Muestra la imagen seleccionada en el formulario antes de guardarla
@@ -899,6 +935,7 @@ function editarPaquete(id) {
     });
     document.getElementById('btn-guardar-paq').innerText = "Actualizar Paquete";
     document.getElementById('btn-cancelar-paq').style.display = "block";
+    hayCambiosSinGuardar = true; // ✨ En edición
 }
 
 async function eliminarPaquete(id) {
@@ -936,6 +973,7 @@ function cancelarEdicionPaq() {
     });
     document.getElementById('btn-guardar-paq').innerText = "Guardar Paquete";
     document.getElementById('btn-cancelar-paq').style.display = "none";
+    hayCambiosSinGuardar = false; // ✨ Formulario limpio
 }
 
 function revisarStockBajo() {
@@ -1005,6 +1043,7 @@ function cargarDatosCotizacion() {
         
         localStorage.removeItem('cotizacionPendienteDesdeEvento'); // Lo borramos para que no se auto-llene siempre
         setTimeout(actualizarRecibo, 50); // Actualizamos los montos visuales al instante
+        hayCambiosSinGuardar = true; // ✨ Datos precargados, listos para guardar
     }
 }
 
@@ -1288,10 +1327,12 @@ function habilitarEdicionCotizacion(id) {
     document.getElementById(`btn-edit-cot-${id}`).style.display = 'none';
     document.getElementById(`btn-save-cot-${id}`).style.display = 'inline-block';
     document.getElementById(`btn-cancel-cot-${id}`).style.display = 'inline-block';
+    hayCambiosSinGuardar = true; // ✨ Editando rápido
 }
 
 function cancelarEdicionCotizacion(id) {
     cotizacionEnEdicion = null;
+    hayCambiosSinGuardar = false; // ✨ Cancelado
     renderizarHistorialCotizaciones(); // Refresca la tabla para ocultar los inputs
 }
 
@@ -1327,6 +1368,7 @@ async function guardarEdicionCotizacion(id) {
         if (error) throw error;
         
         cotizacionEnEdicion = null;
+        hayCambiosSinGuardar = false; // ✨ Guardado con éxito
 
             // Limpiar el buscador para que se vuelvan a mostrar TODAS las cotizaciones
             const buscador = document.getElementById('buscador-cotizaciones');
@@ -1427,6 +1469,8 @@ function editarCotizacionForm(id) {
 
     actualizarRecibo();
     window.scrollTo({ top: 0, behavior: 'smooth' }); // Te sube al inicio de la página donde está el formulario
+
+    hayCambiosSinGuardar = true; // ✨ Editando en el formulario
 }
 
 function cancelarEdicionCot() {
@@ -1447,6 +1491,8 @@ function cancelarEdicionCot() {
     if(btnCancelar) btnCancelar.style.display = 'none';
 
     actualizarRecibo();
+    
+    hayCambiosSinGuardar = false; // ✨ Limpio
 }
 
 // ==========================================
@@ -1456,6 +1502,21 @@ document.addEventListener('DOMContentLoaded', () => {
     
     verificarAcceso();
     aplicarPermisos();
+
+    // ✨ NUEVO: Interceptar enlaces del menú para mostrar alerta de cambios sin guardar
+    const menuItems = document.querySelectorAll('.menu-item');
+    menuItems.forEach(item => {
+        item.addEventListener('click', (e) => {
+            if (hayCambiosSinGuardar) {
+                e.preventDefault();
+                const url = item.getAttribute('href');
+                if (confirm("⚠️ Tienes datos sin guardar.\n\nSi cambias de ventana, se perderán. ¿Deseas salir de todos modos?")) {
+                    hayCambiosSinGuardar = false;
+                    window.location.href = url;
+                }
+            }
+        });
+    });
 
     // ✨ NUEVO: Cerrar resultados del buscador de calendario si das clic afuera
     document.addEventListener('click', (e) => {

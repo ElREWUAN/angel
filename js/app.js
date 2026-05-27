@@ -76,8 +76,23 @@ function mostrarAlerta(icono, titulo, mensaje) {
     const title = document.getElementById('alerta-titulo');
     const msg = document.getElementById('alerta-mensaje');
     const alerta = document.getElementById('mi-alerta');
+
     if (icon && title && msg && alerta) {
-        icon.innerText = icono; title.innerText = titulo; msg.innerHTML = mensaje; 
+        icon.innerText = icono; 
+        title.innerText = titulo; 
+        msg.innerHTML = mensaje; 
+        
+        // Restaurar a la alerta normal si antes fue de confirmación
+        let btnContainer = document.getElementById('alerta-btn-container');
+        if (btnContainer) btnContainer.style.display = 'none';
+        
+        let btnOriginal = alerta.querySelector('.btn-alert') || alerta.querySelector('#btn-alerta-ok');
+        if (btnOriginal) {
+            btnOriginal.style.display = 'block';
+            btnOriginal.className = 'btn-primario';
+            btnOriginal.style.marginTop = '20px';
+        }
+        
         alerta.style.display = 'flex';
     }
 }
@@ -87,12 +102,59 @@ function cerrarAlerta() {
     if (alerta) alerta.style.display = 'none'; 
 }
 
+// ✨ NUEVO: Ventana modal de Confirmación con diseño premium
+function mostrarConfirmacion(icono, titulo, mensaje, textoBotonRojo, callback) {
+    const icon = document.getElementById('alerta-icono');
+    const title = document.getElementById('alerta-titulo');
+    const msg = document.getElementById('alerta-mensaje');
+    const alerta = document.getElementById('mi-alerta');
+    
+    if (icon && title && msg && alerta) {
+        icon.innerText = icono; 
+        title.innerText = titulo; 
+        msg.innerHTML = mensaje; 
+        
+        let btnContainer = document.getElementById('alerta-btn-container');
+        if (!btnContainer) {
+            btnContainer = document.createElement('div');
+            btnContainer.id = 'alerta-btn-container';
+            btnContainer.style.display = 'flex';
+            btnContainer.style.gap = '10px';
+            btnContainer.style.width = '100%';
+            btnContainer.style.marginTop = '25px';
+            alerta.querySelector('.custom-alert-box').appendChild(btnContainer);
+        }
+        
+        btnContainer.innerHTML = `
+            <button class="btn-cancelar" style="display:block; margin-top:0; flex:1;" onclick="cerrarAlerta()">Cancelar</button>
+            <button class="btn-primario" style="margin-top:0; flex:1; background-color:#e74c3c; border:none; box-shadow: 0 6px 15px rgba(231, 76, 60, 0.2);" onclick="ejecutarCallbackAlerta()">${textoBotonRojo}</button>
+        `;
+        btnContainer.style.display = 'flex';
+        
+        const btnOriginal = alerta.querySelector('.btn-alert');
+        if (btnOriginal) btnOriginal.style.display = 'none';
+
+        window.callbackAlertaActual = callback;
+        alerta.style.display = 'flex';
+    } else {
+        // Fallback por si la alerta visual no estuviera cargada
+        if (confirm(titulo + "\\n\\n" + mensaje.replace(/<br>/g, "\\n"))) callback();
+    }
+}
+
+function ejecutarCallbackAlerta() {
+    cerrarAlerta();
+    if (typeof window.callbackAlertaActual === 'function') window.callbackAlertaActual();
+}
+
 // ✨ NUEVO: Cierre de sesión creativo y seguro
 function cerrarSesion() { 
     if (hayCambiosSinGuardar) {
-        if (!confirm("⚠️ Tienes datos sin guardar.\n\nSi cierras sesión, se perderán. ¿Deseas salir de todos modos?")) {
-            return;
-        }
+        mostrarConfirmacion("⚠️", "Cambios sin guardar", "Tienes información sin guardar en esta ventana.<br><br>¿Seguro que deseas salir y perder los cambios?", "Salir sin guardar", () => {
+            hayCambiosSinGuardar = false;
+            cerrarSesion();
+        });
+        return;
     }
     hayCambiosSinGuardar = false;
     mostrarAlerta("👋", "Hasta pronto", "Cerrando sesión de forma segura...");
@@ -645,8 +707,8 @@ function eliminarEvento() {
     eliminarEventoLista(document.getElementById('ev-cliente').getAttribute('data-original'));
 }
 
-async function eliminarEventoLista(cliente) {
-    if(confirm("¿Seguro que deseas cancelar este evento?")) {
+function eliminarEventoLista(cliente) {
+    mostrarConfirmacion("🗑️", "Cancelar Evento", "¿Seguro que deseas cancelar y eliminar este evento de la agenda de forma permanente?", "Eliminar Evento", async () => {
         try {
             const { error } = await supabaseClient.from('Eventos').delete().eq('fecha', fechaSeleccionada).eq('cliente', cliente);
             if (error) throw error;
@@ -657,7 +719,7 @@ async function eliminarEventoLista(cliente) {
             console.error("Error al eliminar evento:", error);
             mostrarAlerta("❌", "Error al eliminar", `No se pudo borrar. Razón: ${error.message}`);
         }
-    }
+    });
 }
 
 function limpiarFormularioEvento() {
@@ -765,8 +827,8 @@ function editarProducto(id) {
     hayCambiosSinGuardar = true; // ✨ En edición
 }
 
-async function eliminarProducto(id) {
-    if(confirm("¿Estás seguro de eliminar este artículo?")) {
+function eliminarProducto(id) {
+    mostrarConfirmacion("🗑️", "Eliminar Artículo", "¿Estás seguro de eliminar este artículo del inventario?<br><br>No podrás deshacer esta acción.", "Eliminar Artículo", async () => {
         try {
             const { error } = await supabaseClient.from('Productos').delete().eq('id', id);
             if (error) throw error;
@@ -776,7 +838,7 @@ async function eliminarProducto(id) {
             console.error(error);
             mostrarAlerta("❌", "Error", "No se eliminó el artículo.");
         }
-    }
+    });
 }
 
 function cancelarEdicionProd() {
@@ -938,8 +1000,8 @@ function editarPaquete(id) {
     hayCambiosSinGuardar = true; // ✨ En edición
 }
 
-async function eliminarPaquete(id) {
-    if(confirm("¿Estás seguro de eliminar este paquete?")) {
+function eliminarPaquete(id) {
+    mostrarConfirmacion("🗑️", "Eliminar Paquete", "¿Estás seguro de eliminar este paquete permanentemente?", "Eliminar Paquete", async () => {
         try {
             const { error } = await supabaseClient.from('Paquetes').delete().eq('id', id);
             if(error) throw error;
@@ -949,7 +1011,7 @@ async function eliminarPaquete(id) {
             console.error(error);
             mostrarAlerta("❌", "Error", "No se eliminó el paquete.");
         }
-    }
+    });
 }
 
 function cancelarEdicionPaq() {
@@ -1407,8 +1469,8 @@ function imprimirReciboHistorial(id) {
     setTimeout(() => { if (typeof actualizarRecibo === 'function') actualizarRecibo(); }, 1500);
 }
 
-async function eliminarCotizacion(id) {
-    if(confirm(`¿Estás seguro de eliminar la cotización #${id}?`)) {
+function eliminarCotizacion(id) {
+    mostrarConfirmacion("🗑️", "Eliminar Cotización", `¿Estás seguro de eliminar permanentemente la cotización #${id}?`, "Eliminar", async () => {
         try {
             const { error } = await supabaseClient.from('Cotizaciones').delete().eq('id', id);
             if (error) throw error;
@@ -1418,7 +1480,7 @@ async function eliminarCotizacion(id) {
             console.error(error);
             mostrarAlerta("❌", "Error", "No se eliminó la cotización.");
         }
-    }
+    });
 }
 
 // ==========================================
@@ -1510,10 +1572,10 @@ document.addEventListener('DOMContentLoaded', () => {
             if (hayCambiosSinGuardar) {
                 e.preventDefault();
                 const url = item.getAttribute('href');
-                if (confirm("⚠️ Tienes datos sin guardar.\n\nSi cambias de ventana, se perderán. ¿Deseas salir de todos modos?")) {
+                mostrarConfirmacion("⚠️", "Cambios sin guardar", "Tienes información sin guardar en esta ventana.<br><br>Si navegas a otra sección, estos cambios se perderán.", "Salir sin guardar", () => {
                     hayCambiosSinGuardar = false;
                     window.location.href = url;
-                }
+                });
             }
         });
     });
